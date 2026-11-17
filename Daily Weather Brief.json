@@ -1,0 +1,215 @@
+{
+  "name": "Daily Weather Brief",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "496ebae9-80c5-413e-b207-9d14dceba10f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "31.77"
+            },
+            {
+              "name": "longitude",
+              "value": "35.21"
+            },
+            {
+              "name": "current",
+              "value": "temperature_2m,apparent_temperature,weather_code"
+            },
+            {
+              "name": "daily",
+              "value": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"
+            },
+            {
+              "name": "timezone",
+              "value": "Asia/Jerusalem"
+            },
+            {
+              "name": "forecast_days",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "d6fc81e8-644b-4085-9bda-e2a5d77d214d",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.first().json;\n\nconst wmo = {\n  0: 'שמיים בהירים', 1: 'בהיר ברובו', 2: 'מעונן חלקית', 3: 'מעונן',\n  45: 'ערפל', 48: 'ערפל', 51: 'טפטוף קל', 53: 'טפטוף', 55: 'טפטוף כבד',\n  61: 'גשם קל', 63: 'גשם', 65: 'גשם כבד', 80: 'ממטרים', 81: 'ממטרים',\n  82: 'ממטרים חזקים', 95: 'סופת רעמים', 96: 'סופת רעמים', 99: 'סופת רעמים'\n};\nconst dayNames = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];\n\nconst now = d.current.temperature_2m;\nconst feels = d.current.apparent_temperature;\nconst desc = wmo[d.current.weather_code] ?? 'לא ידוע';\n\nconst days = d.daily.time.map((t, i) => ({\n  label: 'יום ' + dayNames[new Date(t).getDay()],\n  max: d.daily.temperature_2m_max[i],\n  min: d.daily.temperature_2m_min[i],\n  rain: d.daily.precipitation_probability_max[i],\n  desc: wmo[d.daily.weather_code[i]] ?? ''\n}));\n\nconst today = days[0];\n\n// נתונים לגרף (QuickChart)\nconst chartConfig = {\n  type: 'line',\n  data: {\n    labels: days.map(x => x.label),\n    datasets: [\n      { label: 'מקסימום', data: days.map(x => x.max), borderColor: '#e8590c', fill: false },\n      { label: 'מינימום', data: days.map(x => x.min), borderColor: '#1c7ed6', fill: false }\n    ]\n  },\n  options: { title: { display: true, text: 'תחזית 5 ימים בירושלים (°C)' } }\n};\nconst chartUrl = 'https://quickchart.io/chart?w=600&h=300&bkg=white&c=' +\n  encodeURIComponent(JSON.stringify(chartConfig));\n\n// טקסט עבור ה-AI\nconst aiInput =\n`עכשיו: ${now}° (מרגיש כמו ${feels}°), מצב: ${desc}\nהיום: מקסימום ${today.max}°, מינימום ${today.min}°, סיכוי לגשם ${today.rain}%\nבימים הקרובים:\n` + days.slice(1).map(x => `${x.label}: ${x.min}°-${x.max}°, גשם ${x.rain}%`).join('\\n');\n\nreturn [{ json: { now, feels, desc, today, days, chartUrl, aiInput } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "0be86aa5-4af5-4c87-8efc-9c86891980ec",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-haiku-4-5\",\n  max_tokens: 400,\n  messages: [{\n    role: \"user\",\n    content: \"אתה עוזר שכותב תחזית בוקר ידידותית בעברית לתושבת ירושלים. על סמך הנתונים הבאים כתוב 3-4 משפטים קצרים: מה מזג האוויר היום, המלצת לבוש ספציפית (כולל שכבות אם יש פער גדול בין בוקר לצהריים), האם לקחת מטרייה, ומשפט אחד על הימים הקרובים. בלי כותרות ובלי רשימות.\\n\\n\" + $json.aiInput\n  }]\n}) }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        688,
+        48
+      ],
+      "id": "f782b55d-dbb2-45f7-85f7-6616c618ce04",
+      "name": "HTTP Request1",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Ur2tgLKzX57isGmx",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $input.first().json.content[0].text;\nconst data = $('Code in JavaScript').first().json;\n\nconst rows = data.days.map(x =>\n  `<tr>\n    <td style=\"padding:6px 10px\">${x.label}</td>\n    <td style=\"padding:6px 10px\">${x.desc}</td>\n    <td style=\"padding:6px 10px\">${x.min}° – ${x.max}°</td>\n    <td style=\"padding:6px 10px\">${x.rain}%</td>\n  </tr>`).join('');\n\nconst html = `\n<div dir=\"rtl\" style=\"font-family:Arial,sans-serif;max-width:620px;margin:auto\">\n  <h2>☀️ בוקר טוב! מזג האוויר בירושלים</h2>\n  <p style=\"font-size:16px;line-height:1.6\">${ai.replace(/\\n/g, '<br>')}</p>\n  <p><b>עכשיו:</b> ${data.now}° (מרגיש כמו ${data.feels}°) | ${data.desc}</p>\n  <img src=\"${data.chartUrl}\" alt=\"גרף תחזית\" style=\"width:100%;border-radius:8px\">\n  <table style=\"width:100%;border-collapse:collapse;margin-top:12px\">\n    <tr style=\"background:#f1f3f5\">\n      <th style=\"padding:6px 10px;text-align:right\">יום</th>\n      <th style=\"padding:6px 10px;text-align:right\">מצב</th>\n      <th style=\"padding:6px 10px;text-align:right\">טמפרטורה</th>\n      <th style=\"padding:6px 10px;text-align:right\">גשם</th>\n    </tr>\n    ${rows}\n  </table>\n</div>`;\n\nreturn [{ json: { html } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        272
+      ],
+      "id": "6f05b476-bc7d-4b0e-8da1-04d10218406d",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1088,
+        288
+      ],
+      "id": "407a3528-34d7-4c1b-a306-185ed555dff3",
+      "name": "Send an Email1",
+      "webhookId": "33739809-a189-4a4e-a443-ca0ed2722e79",
+      "credentials": {
+        "smtp": {
+          "id": "AoyWsentzznr8I3F",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Jerusalem",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "35d3fa0b-0c98-4d76-a563-99ba0edb6b2e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4690abb560c42c2caab423ddf52b22afd570cb03a6d8b18040fc8a4ebe6a8364"
+  },
+  "nodeGroups": [],
+  "id": "xX9f1KJrDdbtv0eH",
+  "tags": []
+}
